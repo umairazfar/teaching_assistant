@@ -1,0 +1,22 @@
+# Environment variables
+.env
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints
+
+# VS Code
+.vscode/
+
+# Local cache/data
+user_usage.json
+config.json
+*.zip
+*.csv
+*.xlsx
+*.pdf
