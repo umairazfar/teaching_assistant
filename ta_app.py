@@ -87,6 +87,10 @@ if "grading_data" not in st.session_state: st.session_state.grading_data = None
 if "raw_json_list" not in st.session_state: st.session_state.raw_json_list = []
 if "zip_bytes" not in st.session_state: st.session_state.zip_bytes = None
 if "confirm_no_sol" not in st.session_state: st.session_state.confirm_no_sol = False
+if "run_evaluation" not in st.session_state: st.session_state.run_evaluation = False
+if "file_states" not in st.session_state: st.session_state.file_states = {"rubric": None, "sol": None, "students": 0}
+if "report_index" not in st.session_state: st.session_state.report_index = 0
+if "show_confirm_dialog" not in st.session_state: st.session_state.show_confirm_dialog = False
 
 # ==========================================
 # 3. CORE PROCESSING FUNCTIONS
@@ -162,7 +166,7 @@ with st.sidebar:
     st.header("🪙 Credits")
     st.metric("Balance", f"🪙 {balance}")
     # Use the consistent variable here
-    st.link_button("Buy More Credits", stripe_payment_url, use_container_width=True)
+    st.link_button("Buy More Credits", stripe_payment_url, width='content')
     st.divider()
     
     # 2. Hardcoded API Key
@@ -183,26 +187,58 @@ with col2:
     st.subheader("📝 Submissions")
     student_files = st.file_uploader("Upload Student Files", type=['py', 'zip', 'pdf', 'docx', 'txt'], accept_multiple_files=True, key="students")
 
-# Reset confirmation if files change
-if rubric_file or sol_file or student_files:
+# Reset confirmation ONLY if files actually change
+current_files = {
+    "rubric": rubric_file.name if rubric_file else None,
+    "sol": sol_file.name if sol_file else None,
+    "students": len(student_files) if student_files else 0
+}
+
+if current_files != st.session_state.file_states:
     st.session_state.confirm_no_sol = False
+    st.session_state.show_confirm_dialog = False
+    st.session_state.file_states = current_files
+    st.session_state.run_evaluation = False
 
 # ==========================================
 # 5. GRADING ENGINE
 # ==========================================
-if st.button("🚀 Run Evaluation", type="primary", use_container_width=True):
+# Handle Run button click
+col_btn_1, col_btn_2, col_btn_3 = st.columns([1, 2, 1])
+with col_btn_2:
+    if st.button("🚀 Run Evaluation", type="primary", use_container_width=True):
+        # Reset run flags
+        st.session_state.run_evaluation = True
+        # If no solution and not already confirmed, we need to ask
+        if not sol_file and not st.session_state.confirm_no_sol:
+            st.session_state.show_confirm_dialog = True
+            st.session_state.run_evaluation = False # Wait for confirm
+
+# Show Confirmation Dialog if needed
+if st.session_state.get("show_confirm_dialog", False):
+    st.warning("⚠️ No Solution file uploaded. The AI will grade based only on the Rubric and its own judgment, which may be less accurate.")
+    c1, c2 = st.columns(2)
+    if c1.button("Confirm: Proceed without Solution"):
+        st.session_state.confirm_no_sol = True
+        st.session_state.show_confirm_dialog = False
+        st.session_state.run_evaluation = True # Trigger run
+        st.rerun()
+    if c2.button("Cancel"):
+        st.session_state.show_confirm_dialog = False
+        st.rerun()
+
+# Safety checks and execution
+if st.session_state.run_evaluation:
     num_students = len(student_files)
     
     if balance < num_students:
         st.error(f"Insufficient credits! You need {num_students} but have {balance}.")
+        st.session_state.run_evaluation = False
     elif not (rubric_file and student_files):
         st.error("Please upload Rubric and Student Files before running.")
-    elif not sol_file and not st.session_state.confirm_no_sol:
-        st.warning("⚠️ No Solution file uploaded. The AI will grade based only on the Rubric and its own judgment, which may be less accurate.")
-        if st.button("Confirm: Proceed without Solution"):
-            st.session_state.confirm_no_sol = True
-            st.rerun()
+        st.session_state.run_evaluation = False
     else:
+        # Proceed with evaluation
         try:
             client = genai.Client(api_key=api_key)
             rubric_text = extract_text(rubric_file)
@@ -291,23 +327,15 @@ if st.button("🚀 Run Evaluation", type="primary", use_container_width=True):
                 df_results.to_csv(csv_buffer, index=False)
                 st.session_state.csv_data = csv_buffer.getvalue()
                 
-                st.success(f"Grading Complete! {successfully_graded} credits deducted.")
-                time.sleep(2)
                 st.rerun()
 
         except Exception as global_e:
             st.error(f"Critical System Error: {global_e}")
+        finally:
+            st.session_state.run_evaluation = False # Reset flag after run
 
 # ==========================================
-# 6. GETTING STARTED
-# ==========================================
-st.divider()
-st.header("📖 Getting Started")
-st.write("New to the AI Teaching Assistant? Watch this quick guide to learn how to upload your rubric, solution, and student submissions for automated grading.")
-st.video("https://www.youtube.com/watch?v=dQw4w9WgXcQ") # Placeholder video link
-
-# ==========================================
-# 7. RESULTS DISPLAY (TABS)
+# 6. RESULTS DISPLAY (TABS)
 # ==========================================
 if st.session_state.grading_data is not None:
     st.divider()
@@ -326,10 +354,41 @@ if st.session_state.grading_data is not None:
             st.bar_chart(df.set_index("Username")["Total Score"])
 
     with t3:
-        # Individual report viewer code...
+        # Individual report viewer with arrows
         u_list = [s["username"] for s in st.session_state.raw_json_list]
-        selected = st.selectbox("Select Student", u_list)
-        # Find data for selected student and display feedback
-        s_data = next(s for s in st.session_state.raw_json_list if s["username"] == selected)
-        st.write(f"### Overall Feedback for {selected}")
+        
+        col_prev, col_sel, col_next = st.columns([1, 4, 1])
+        
+        with col_prev:
+            if st.button("⬅️ Previous", use_container_width=True):
+                st.session_state.report_index = (st.session_state.report_index - 1) % len(u_list)
+        
+        with col_next:
+            if st.button("Next ➡️", use_container_width=True):
+                st.session_state.report_index = (st.session_state.report_index + 1) % len(u_list)
+        
+        with col_sel:
+            # Update index if user selects from dropdown manually
+            selected = st.selectbox("Select Student", u_list, index=st.session_state.report_index)
+            st.session_state.report_index = u_list.index(selected)
+
+        # Display feedback for the selected student
+        s_data = st.session_state.raw_json_list[st.session_state.report_index]
+        st.write(f"## Report for: **{s_data['username']}**")
+        st.metric("Total Score", f"{s_data['total_score']} pts")
+        
+        st.subheader("Overall Feedback")
         st.info(s_data['overall_feedback'])
+        
+        st.subheader("Question-by-Question Breakdown")
+        for q in s_data.get("questions", []):
+            with st.expander(f"Q{q.get('q_num')} | Score: {q.get('score')}", expanded=True):
+                st.write(q.get('feedback', 'No feedback provided.'))
+
+# ==========================================
+# 7. GETTING STARTED
+# ==========================================
+st.divider()
+st.header("📖 Getting Started")
+st.write("New to the AI Teaching Assistant? Watch this quick guide to learn how to upload your rubric, solution, and student submissions for automated grading.")
+st.video("https://www.youtube.com/watch?v=dQw4w9WgXcQ") # Placeholder video link
