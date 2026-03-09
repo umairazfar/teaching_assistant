@@ -1,9 +1,11 @@
 streamlit
 pandas
 google-genai
+google-api-core
 fpdf
 python-docx
 pypdf
 python-dotenv
 st-supabase-connection
+
 supabase
