@@ -67,14 +67,27 @@ def deduct_credit(email, amount=1):
 
 # --- DYNAMIC AUTH LOGIC (No more dev_mode flag) ---
 # Check if Supabase has an active session for this browser
-user_info = st.context.user  # Streamlit's built-in way to access logged-in user
+# --- REPLACEMENT FOR LINE 70 ---
+# Instead of st.context.user, we ask Supabase directly for the current user
+try:
+    user_response = supabase.auth.get_user()
+    user_info = user_response.user
+except Exception:
+    user_info = None
 
 if not user_info:
     st.set_page_config(page_title="AI Teaching Assistant", page_icon="🎓")
     st.title("👨‍🏫 AI Teaching Assistant")
     st.info("Please log in with Google to access the grading engine.")
-    # This button triggers the Supabase Google OAuth handshake
-    st.button("Log in with Google", on_click=st.login)
+    
+    # We use a button to trigger the OAuth flow
+    if st.button("Log in with Google"):
+        # Note: Change 'http://localhost:8501' to your production URL when you deploy!
+        res = supabase.auth.sign_in_with_oauth({
+            "provider": "google",
+            "options": {"redirect_to": "http://localhost:8501"} 
+        })
+        st.markdown(f'<a href="{res.url}" target="_self">Click here to complete Login</a>', unsafe_allow_html=True)
     st.stop()
 
 # If we reach here, the user is logged in
@@ -417,4 +430,3 @@ st.divider()
 st.header("📖 Getting Started")
 st.write("New to the AI Teaching Assistant? Watch this quick guide to learn how to upload your rubric, solution, and student submissions for automated grading.")
 st.video("https://www.youtube.com/watch?v=dQw4w9WgXcQ") # Placeholder video link
-
