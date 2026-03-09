@@ -1,0 +1,9 @@
+streamlit
+pandas
+google-genai
+fpdf
+python-docx
+pypdf
+python-dotenv
+st-supabase-connection
+supabase

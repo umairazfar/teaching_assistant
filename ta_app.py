@@ -14,23 +14,50 @@ import logging
 import time
 from dotenv import load_dotenv
 from st_supabase_connection import SupabaseConnection
+from supabase import create_client
 
 load_dotenv()
+
+
+# 1. Setup Connection
+supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
+def login_screen():
+    st.title("🍎 AI Teaching Assistant Login")
+    
+    tab1, tab2 = st.tabs(["Magic Link", "Google Login"])
+    
+    with tab1:
+        email = st.text_input("Enter your university email")
+        if st.button("Send Magic Link"):
+            res = supabase.auth.sign_in_with_otp({"email": email})
+            st.success("Check your email for the login link!")
+
+    with tab2:
+        if st.button("Sign in with Google"):
+            # This redirects the user to Google
+            res = supabase.auth.sign_in_with_oauth({
+                "provider": "google",
+                "options": { "redirect_to": "http://localhost:8501" }
+            })
+            # Streamlit logic to handle the redirect follows here...
 
 # ==========================================
 # 1. DATABASE & AUTHENTICATION HELPERS
 # ==========================================
+# This helper handles the Supabase Connection
 conn = st.connection("supabase", type=SupabaseConnection)
 
 def get_user_credits(email):
+    """Fetches credits from the profile_credits table we linked to Auth."""
     res = conn.table("profile_credits").select("credits").eq("email", email).execute()
     if len(res.data) == 0:
-        # New user! Create record with 10 credits
-        conn.table("profile_credits").insert({"email": email, "credits": 10}).execute()
-        return 10
+        # Trigger in Supabase usually handles this, but as a fallback:
+        return 0
     return res.data[0]["credits"]
 
 def deduct_credit(email, amount=1):
+    """Subtracts credits after successful grading."""
     current = get_user_credits(email)
     if current >= amount:
         new_total = current - amount
@@ -38,26 +65,21 @@ def deduct_credit(email, amount=1):
         return True
     return False
 
-# --- UNIFIED AUTHENTICATION LOGIC ---
-try:
-    is_logged_in = st.user.get("is_logged_in", False)
-except AttributeError:
-    is_logged_in = True  # Local testing fallback
+# --- DYNAMIC AUTH LOGIC (No more dev_mode flag) ---
+# Check if Supabase has an active session for this browser
+user_info = st.context.user  # Streamlit's built-in way to access logged-in user
 
-# DEVELOPER MODE: Force login to True for local testing
-# Change this to False only when you are ready to upload to the internet
-dev_mode = True
-
-if not is_logged_in and not dev_mode:
+if not user_info:
     st.set_page_config(page_title="AI Teaching Assistant", page_icon="🎓")
     st.title("👨‍🏫 AI Teaching Assistant")
     st.info("Please log in with Google to access the grading engine.")
+    # This button triggers the Supabase Google OAuth handshake
     st.button("Log in with Google", on_click=st.login)
     st.stop()
 
-# Set dummy user info for local testing
-user_email = st.user.get("email", "admin_test@example.com")
-user_name = st.user.get("name", "Professor Test")
+# If we reach here, the user is logged in
+user_email = user_info.email
+user_name = user_info.get("name", "Professor")
 balance = get_user_credits(user_email)
 
 # ==========================================
@@ -160,7 +182,10 @@ def create_pdf_report(student_data):
 # ==========================================
 
 # Define it once using the correct ID from your Stripe Dashboard
-stripe_payment_url = f"https://buy.stripe.com/test_3cI7sKaAU0VvgjA1UgaR200?prefilled_email={user_email}"
+#stripe_payment_url = f"https://buy.stripe.com/test_3cI7sKaAU0VvgjA1UgaR200?prefilled_email={user_email}"
+
+stripe_url = st.secrets.get("STRIPE_PAYMENT_URL", "https://buy.stripe.com/test_3cI7sKaAU0VvgjA1UgaR200")
+stripe_payment_url = f"{stripe_url}?prefilled_email={user_email}"
 
 with st.sidebar:
     st.header("🪙 Credits")
@@ -170,7 +195,7 @@ with st.sidebar:
     st.divider()
     
     # 2. Hardcoded API Key
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = st.secrets["GEMINI_API_KEY"]
 
     model_choice = "gemini-2.5-flash" # or "gemini-1.5-flash" for the stable version
 
