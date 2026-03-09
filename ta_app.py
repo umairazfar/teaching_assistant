@@ -5,7 +5,7 @@ import os
 import io
 import zipfile
 from google import genai
-from google.api_core import exceptions
+import google.api_core.exceptions as google_exceptions
 from google.genai import types
 from fpdf import FPDF
 import docx
@@ -417,3 +417,4 @@ st.divider()
 st.header("📖 Getting Started")
 st.write("New to the AI Teaching Assistant? Watch this quick guide to learn how to upload your rubric, solution, and student submissions for automated grading.")
 st.video("https://www.youtube.com/watch?v=dQw4w9WgXcQ") # Placeholder video link
+
