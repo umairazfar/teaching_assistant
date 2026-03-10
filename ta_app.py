@@ -25,22 +25,19 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 def login_screen():
     st.title("🍎 AI Teaching Assistant Login")
     
-    tab1, tab2 = st.tabs(["Magic Link", "Google Login"])
-    
-    with tab1:
-        email = st.text_input("Enter your university email")
-        if st.button("Send Magic Link"):
-            res = supabase.auth.sign_in_with_otp({"email": email})
-            st.success("Check your email for the login link!")
+    # Check if we are local or in the cloud
+    if "streamlit.app" in st.get_option("browser.serverAddress"):
+        redirect_uri = "https://teachingassistant-ai.streamlit.app"
+    else:
+        redirect_uri = "http://localhost:8501"
 
-    with tab2:
-        if st.button("Sign in with Google"):
-            # This redirects the user to Google
-            res = supabase.auth.sign_in_with_oauth({
-                "provider": "google",
-                "options": { "redirect_to": "http://localhost:8501" }
-            })
-            # Streamlit logic to handle the redirect follows here...
+    if st.button("Sign in with Google"):
+        res = supabase.auth.sign_in_with_oauth({
+            "provider": "google",
+            "options": { "redirect_to": redirect_uri }
+        })
+        # Use a proper redirect for the SaaS environment
+        st.link_button("Proceed to Google Login", res.url)
 
 # ==========================================
 # 1. DATABASE & AUTHENTICATION HELPERS
